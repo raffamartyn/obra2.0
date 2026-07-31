@@ -47,52 +47,199 @@ export default async function ObraDetallePage({
   }
 
   const cliente = clientes.find(
-    (item) => item.ID_CLIENTE === obra.ID_CLIENTE
+    (item) =>
+      item.ID_CLIENTE === obra.ID_CLIENTE
   );
 
-  const contratosDeLaObra = contratos.filter(
-    (contrato) => contrato.ID_OBRA === obra.ID_OBRA
-  );
+  const contratosDeLaObra =
+    contratos.filter(
+      (contrato) =>
+        contrato.ID_OBRA === obra.ID_OBRA
+    );
 
-  const cobrosDeLaObra = cobros.filter(
-    (cobro) => cobro.ID_OBRA === obra.ID_OBRA
-  );
-
-  const idsContratosDeLaObra = new Set(
+  /*
+   * AppSheet guarda:
+   *
+   * MONTO = importe bruto del contrato
+   * TOTAL = neto del contratista, con comisión descontada
+   * COMISION_MONTO = comisión calculada
+   * DESCUENTOS = porcentaje de comisión
+   */
+  const contratosConComision =
     contratosDeLaObra.map(
-      (contrato) => contrato.ID_CONTRATO
-    )
-  );
+      (contrato) => {
+        const contratoConCamposNuevos =
+          contrato as typeof contrato & {
+            TOTAL?: unknown;
+            DESCUENTOS?: unknown;
+            COMISION_MONTO?: unknown;
+          };
 
-  const pagosDeLaObra = pagos.filter((pago) =>
-    idsContratosDeLaObra.has(pago.ID_CONTRATO)
-  );
+        const montoBrutoGuardado =
+          convertirNumero(
+            contrato.MONTO
+          );
 
-  const presupuestoGeneral = contratosDeLaObra.reduce(
-    (total, contrato) => total + contrato.MONTO,
-    0
-  );
+        const totalNetoGuardado =
+          convertirNumero(
+            contratoConCamposNuevos.TOTAL
+          );
 
-  const totalCobrado = cobrosDeLaObra.reduce(
-    (total, cobro) => total + cobro.MONTO,
-    0
-  );
+        const porcentajeComision =
+          convertirPorcentaje(
+            contratoConCamposNuevos.DESCUENTOS
+          );
 
-  const totalPagado = pagosDeLaObra.reduce(
-    (total, pago) => total + pago.MONTO,
-    0
-  );
+        const comisionGuardada =
+          convertirNumero(
+            contratoConCamposNuevos.COMISION_MONTO
+          );
+
+        /*
+         * Si AppSheet todavía no guardó la comisión,
+         * se calcula como respaldo usando MONTO.
+         */
+        const comisionMonto =
+          comisionGuardada > 0
+            ? comisionGuardada
+            : montoBrutoGuardado *
+              porcentajeComision;
+
+        /*
+         * TOTAL ya viene con la comisión descontada.
+         * No volvemos a descontarla en la app web.
+         */
+        const totalContratista =
+          totalNetoGuardado > 0
+            ? totalNetoGuardado
+            : Math.max(
+                montoBrutoGuardado -
+                  comisionMonto,
+                0
+              );
+
+        /*
+         * El bruto normalmente viene desde MONTO.
+         * Como respaldo, se reconstruye sumando
+         * neto + comisión.
+         */
+        const totalContrato =
+          montoBrutoGuardado > 0
+            ? montoBrutoGuardado
+            : totalContratista +
+              comisionMonto;
+
+        return {
+          ...contrato,
+          totalContrato,
+          porcentajeComision,
+          comisionMonto,
+          totalContratista,
+        };
+      }
+    );
+
+  const cobrosDeLaObra =
+    cobros.filter(
+      (cobro) =>
+        cobro.ID_OBRA === obra.ID_OBRA
+    );
+
+  const idsContratosDeLaObra =
+    new Set(
+      contratosDeLaObra.map(
+        (contrato) =>
+          contrato.ID_CONTRATO
+      )
+    );
+
+  /*
+   * Solamente se toman pagos que tengan
+   * un contrato perteneciente a esta obra.
+   */
+  const pagosDeLaObra =
+    pagos.filter(
+      (pago) =>
+        pago.ID_CONTRATO &&
+        idsContratosDeLaObra.has(
+          pago.ID_CONTRATO
+        )
+    );
+
+  /*
+   * Presupuesto bruto de la obra.
+   * La comisión no modifica este total.
+   */
+  const presupuestoGeneral =
+    contratosConComision.reduce(
+      (total, contrato) =>
+        total +
+        contrato.totalContrato,
+      0
+    );
+
+  /*
+   * Total neto que corresponde pagar
+   * a todos los contratistas.
+   */
+  const totalNetoContratistas =
+    contratosConComision.reduce(
+      (total, contrato) =>
+        total +
+        contrato.totalContratista,
+      0
+    );
+
+  /*
+   * Comisión total de la obra.
+   * Se muestra como información adicional.
+   */
+  const totalComisiones =
+    contratosConComision.reduce(
+      (total, contrato) =>
+        total +
+        contrato.comisionMonto,
+      0
+    );
+
+  const totalCobrado =
+    cobrosDeLaObra.reduce(
+      (total, cobro) =>
+        total +
+        convertirNumero(cobro.MONTO),
+      0
+    );
+
+  /*
+   * Este valor solamente suma registros
+   * existentes en la tabla de pagos.
+   */
+  const totalPagado =
+    pagosDeLaObra.reduce(
+      (total, pago) =>
+        total +
+        convertirNumero(pago.MONTO),
+      0
+    );
 
   const saldoPorCobrar =
-    presupuestoGeneral - totalCobrado;
+    presupuestoGeneral -
+    totalCobrado;
 
+  /*
+   * El saldo a contratistas se calcula
+   * sobre el neto, no sobre el bruto.
+   */
   const saldoPorPagar =
-    presupuestoGeneral - totalPagado;
+    totalNetoContratistas -
+    totalPagado;
 
   const porcentajeCobrado =
     presupuestoGeneral > 0
       ? Math.min(
-          (totalCobrado / presupuestoGeneral) * 100,
+          (totalCobrado /
+            presupuestoGeneral) *
+            100,
           100
         )
       : 0;
@@ -116,7 +263,6 @@ export default async function ObraDetallePage({
             <h1 className="mt-1 text-3xl font-bold text-slate-900">
               {obra.NOMBRE}
             </h1>
-            
 
             <p className="mt-2 text-slate-500">
               {obra.DIRECCION ||
@@ -124,33 +270,44 @@ export default async function ObraDetallePage({
             </p>
           </div>
 
-          <span
-            className={`w-fit rounded-full px-4 py-2 text-sm font-semibold ${obtenerColorEstado(
-              obra.ESTADO
-            )}`}
-          >
-            {obra.ESTADO || "Sin estado"}
-          </span>
-          <BotonPDF idObra={obra.ID_OBRA} />
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              className={`w-fit rounded-full px-4 py-2 text-sm font-semibold ${obtenerColorEstado(
+                obra.ESTADO
+              )}`}
+            >
+              {obra.ESTADO ||
+                "Sin estado"}
+            </span>
+
+            <BotonPDF
+              idObra={obra.ID_OBRA}
+            />
+          </div>
         </div>
-    
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <ResumenCard
           titulo="Presupuesto general"
-          valor={formatearDinero(presupuestoGeneral)}
+          valor={formatearDinero(
+            presupuestoGeneral
+          )}
         />
 
         <ResumenCard
           titulo="Total cobrado"
-          valor={formatearDinero(totalCobrado)}
+          valor={formatearDinero(
+            totalCobrado
+          )}
           variante="positivo"
         />
 
         <ResumenCard
           titulo="Saldo por cobrar"
-          valor={formatearDinero(saldoPorCobrar)}
+          valor={formatearDinero(
+            saldoPorCobrar
+          )}
           variante={
             saldoPorCobrar > 0
               ? "pendiente"
@@ -160,34 +317,55 @@ export default async function ObraDetallePage({
 
         <ResumenCard
           titulo="Pagado a contratistas"
-          valor={formatearDinero(totalPagado)}
+          valor={formatearDinero(
+            totalPagado
+          )}
+          variante={
+            totalPagado > 0
+              ? "positivo"
+              : "normal"
+          }
         />
 
         <ResumenCard
           titulo="Saldo de contratos"
-          valor={formatearDinero(saldoPorPagar)}
+          valor={formatearDinero(
+            saldoPorPagar
+          )}
           variante={
             saldoPorPagar > 0
               ? "pendiente"
               : "positivo"
           }
         />
+
+        <ResumenCard
+          titulo="Total comisión"
+          valor={formatearDinero(
+            totalComisiones
+          )}
+          variante="positivo"
+        />
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-slate-900">
               Avance de cobro
             </p>
 
             <p className="mt-1 text-xs text-slate-500">
-              Porcentaje cobrado sobre el presupuesto general
+              Porcentaje cobrado sobre el
+              presupuesto general
             </p>
           </div>
 
           <span className="text-xl font-bold text-slate-900">
-            {porcentajeCobrado.toFixed(0)}%
+            {porcentajeCobrado.toFixed(
+              0
+            )}
+            %
           </span>
         </div>
 
@@ -212,7 +390,10 @@ export default async function ObraDetallePage({
 
               <Dato
                 etiqueta="Estado"
-                valor={obra.ESTADO || "Sin estado"}
+                valor={
+                  obra.ESTADO ||
+                  "Sin estado"
+                }
               />
 
               <Dato
@@ -225,7 +406,9 @@ export default async function ObraDetallePage({
 
               <Dato
                 etiqueta="Fecha"
-                valor={formatearFecha(obra.FECHA)}
+                valor={formatearFecha(
+                  obra.FECHA
+                )}
               />
             </div>
 
@@ -256,13 +439,17 @@ export default async function ObraDetallePage({
 
             <Dato
               etiqueta="CUIT"
-              valor={cliente?.CUIT || "Sin CUIT"}
+              valor={
+                cliente?.CUIT ||
+                "Sin CUIT"
+              }
             />
 
             <Dato
               etiqueta="Teléfono"
               valor={
-                cliente?.TELEFONO || "Sin teléfono"
+                cliente?.TELEFONO ||
+                "Sin teléfono"
               }
             />
 
@@ -279,9 +466,12 @@ export default async function ObraDetallePage({
 
       <Seccion
         titulo="Contratos"
-        cantidad={contratosDeLaObra.length}
+        cantidad={
+          contratosConComision.length
+        }
       >
-        {contratosDeLaObra.length === 0 ? (
+        {contratosConComision.length ===
+        0 ? (
           <MensajeVacio texto="Esta obra todavía no tiene contratos." />
         ) : (
           <div className="overflow-x-auto">
@@ -292,7 +482,10 @@ export default async function ObraDetallePage({
                   <Th>Tipo</Th>
                   <Th>Descripción</Th>
                   <Th>Fecha</Th>
-                  <Th>Monto</Th>
+                  <Th>Total contrato</Th>
+                  <Th>Comisión %</Th>
+                  <Th>Comisión</Th>
+                  <Th>Neto contratista</Th>
                   <Th>Pagado</Th>
                   <Th>Saldo</Th>
                   <Th>Documento</Th>
@@ -300,101 +493,140 @@ export default async function ObraDetallePage({
               </thead>
 
               <tbody>
-                {contratosDeLaObra.map((contrato) => {
-                  const contratista =
-                    contratistas.find(
-                      (item) =>
-                        item.ID_CONTRATISTA ===
-                        contrato.ID_CONTRATISTA
-                    );
+                {contratosConComision.map(
+                  (contrato) => {
+                    const contratista =
+                      contratistas.find(
+                        (item) =>
+                          item.ID_CONTRATISTA ===
+                          contrato.ID_CONTRATISTA
+                      );
 
-                  const pagosDelContrato =
-                    pagosDeLaObra.filter(
-                      (pago) =>
-                        pago.ID_CONTRATO ===
-                        contrato.ID_CONTRATO
-                    );
+                    const pagosDelContrato =
+                      pagosDeLaObra.filter(
+                        (pago) =>
+                          pago.ID_CONTRATO ===
+                          contrato.ID_CONTRATO
+                      );
 
-                  const pagadoContrato =
-                    pagosDelContrato.reduce(
-                      (total, pago) =>
-                        total + pago.MONTO,
-                      0
-                    );
+                    /*
+                     * Solamente suma pagos reales
+                     * asociados a este contrato.
+                     */
+                    const pagadoContrato =
+                      pagosDelContrato.reduce(
+                        (total, pago) =>
+                          total +
+                          convertirNumero(
+                            pago.MONTO
+                          ),
+                        0
+                      );
 
-                  const saldoContrato =
-                    contrato.MONTO - pagadoContrato;
+                    const saldoContrato =
+                      contrato.totalContratista -
+                      pagadoContrato;
 
-                  return (
-                    <tr
-                      key={contrato.ID_CONTRATO}
-                      className="border-b border-slate-100 last:border-0"
-                    >
-                      <Td>
-                        {contratista?.NOMBRE ||
-                          "Sin contratista"}
-                      </Td>
+                    return (
+                      <tr
+                        key={
+                          contrato.ID_CONTRATO
+                        }
+                        className="border-b border-slate-100 last:border-0"
+                      >
+                        <Td>
+                          {contratista?.NOMBRE ||
+                            "Sin contratista"}
+                        </Td>
 
-                      <Td>{contrato.TIPO}</Td>
+                        <Td>
+                          {contrato.TIPO ||
+                            "Sin tipo"}
+                        </Td>
 
-                      <Td>
-                        {contrato.DESCRIPCION ||
-                          "Sin descripción"}
-                      </Td>
+                        <Td>
+                          {contrato.DESCRIPCION ||
+                            "Sin descripción"}
+                        </Td>
 
-                      <Td>
-                        {formatearFecha(
-                          contrato.FECHA
-                        )}
-                      </Td>
-
-                      <Td destacado>
-                        {formatearDinero(
-                          contrato.MONTO
-                        )}
-                      </Td>
-
-                      <Td>
-                        <span className="font-semibold text-emerald-700">
-                          {formatearDinero(
-                            pagadoContrato
+                        <Td>
+                          {formatearFecha(
+                            contrato.FECHA
                           )}
-                        </span>
-                      </Td>
+                        </Td>
 
-                      <Td>
-                        <span
-                          className={
-                            saldoContrato > 0
-                              ? "font-semibold text-amber-700"
-                              : "font-semibold text-emerald-700"
-                          }
-                        >
+                        <Td destacado>
                           {formatearDinero(
-                            saldoContrato
+                            contrato.totalContrato
                           )}
-                        </span>
-                      </Td>
+                        </Td>
 
-                      <Td>
-                        {contrato.DOCUMENTO ? (
-                          <a
-                            href={contrato.DOCUMENTO}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-semibold text-blue-700 hover:underline"
-                          >
-                            Ver
-                          </a>
-                        ) : (
-                          <span className="text-slate-400">
-                            —
+                        <Td>
+                          {formatearPorcentaje(
+                            contrato.porcentajeComision
+                          )}
+                        </Td>
+
+                        <Td>
+                          <span className="font-semibold text-violet-700">
+                            {formatearDinero(
+                              contrato.comisionMonto
+                            )}
                           </span>
-                        )}
-                      </Td>
-                    </tr>
-                  );
-                })}
+                        </Td>
+
+                        <Td destacado>
+                          {formatearDinero(
+                            contrato.totalContratista
+                          )}
+                        </Td>
+
+                        <Td>
+                          <span className="font-semibold text-emerald-700">
+                            {formatearDinero(
+                              pagadoContrato
+                            )}
+                          </span>
+                        </Td>
+
+                        <Td>
+                          <span
+                            className={
+                              saldoContrato > 0
+                                ? "font-semibold text-amber-700"
+                                : saldoContrato < 0
+                                  ? "font-semibold text-red-700"
+                                  : "font-semibold text-emerald-700"
+                            }
+                          >
+                            {formatearDinero(
+                              saldoContrato
+                            )}
+                          </span>
+                        </Td>
+
+                        <Td>
+                          {contrato.DOCUMENTO ? (
+                            <a
+                              href={
+                                contrato.DOCUMENTO
+                              }
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-semibold text-blue-700 hover:underline"
+                            >
+                              Ver
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">
+                              —
+                            </span>
+                          )}
+                        </Td>
+                      </tr>
+                    );
+                  }
+                )}
               </tbody>
             </table>
           </div>
@@ -404,58 +636,84 @@ export default async function ObraDetallePage({
       <div className="grid gap-6 xl:grid-cols-2">
         <Seccion
           titulo="Cobros"
-          cantidad={cobrosDeLaObra.length}
+          cantidad={
+            cobrosDeLaObra.length
+          }
         >
-          {cobrosDeLaObra.length === 0 ? (
+          {cobrosDeLaObra.length ===
+          0 ? (
             <MensajeVacio texto="No hay cobros registrados para esta obra." />
           ) : (
             <div className="space-y-3">
-              {cobrosDeLaObra.map((cobro) => (
-                <Movimiento
-                  key={cobro.ID_COBROS}
-                  titulo="Cobro del cliente"
-                  fecha={cobro.FECHA}
-                  monto={cobro.MONTO}
-                  comprobante={cobro.COMPROBANTE}
-                  tipo="cobro"
-                />
-              ))}
+              {cobrosDeLaObra.map(
+                (cobro) => (
+                  <Movimiento
+                    key={
+                      cobro.ID_COBROS
+                    }
+                    titulo="Cobro del cliente"
+                    fecha={cobro.FECHA}
+                    monto={convertirNumero(
+                      cobro.MONTO
+                    )}
+                    comprobante={
+                      cobro.COMPROBANTE
+                    }
+                    tipo="cobro"
+                  />
+                )
+              )}
             </div>
           )}
         </Seccion>
 
         <Seccion
           titulo="Pagos a contratistas"
-          cantidad={pagosDeLaObra.length}
+          cantidad={
+            pagosDeLaObra.length
+          }
         >
-          {pagosDeLaObra.length === 0 ? (
+          {pagosDeLaObra.length ===
+          0 ? (
             <MensajeVacio texto="No hay pagos registrados para esta obra." />
           ) : (
             <div className="space-y-3">
-              {pagosDeLaObra.map((pago) => {
-                const contratista =
-                  contratistas.find(
-                    (item) =>
-                      item.ID_CONTRATISTA ===
-                      pago.ID_CONTRATISTA
-                  );
+              {pagosDeLaObra.map(
+                (pago) => {
+                  const contratoDelPago =
+                    contratosDeLaObra.find(
+                      (contrato) =>
+                        contrato.ID_CONTRATO ===
+                        pago.ID_CONTRATO
+                    );
 
-                return (
-                  <Movimiento
-                    key={pago.ID_PAGO}
-                    titulo={
-                      contratista?.NOMBRE ||
-                      "Contratista"
-                    }
-                    fecha={pago.FECHA}
-                    monto={pago.MONTO}
-                    comprobante={
-                      pago.COMPROBANTE
-                    }
-                    tipo="pago"
-                  />
-                );
-              })}
+                  const contratista =
+                    contratistas.find(
+                      (item) =>
+                        item.ID_CONTRATISTA ===
+                        (pago.ID_CONTRATISTA ||
+                          contratoDelPago?.ID_CONTRATISTA)
+                    );
+
+                  return (
+                    <Movimiento
+                      key={pago.ID_PAGO}
+                      titulo={
+                        contratista?.NOMBRE ||
+                        "Contratista"
+                      }
+                      fecha={pago.FECHA}
+                      monto={convertirNumero(
+                        pago.MONTO
+                      )}
+                      comprobante={
+                        pago.COMPROBANTE
+                      }
+                      tipo="pago"
+                    />
+                  );
+                }
+              )}
             </div>
           )}
         </Seccion>
@@ -467,7 +725,10 @@ export default async function ObraDetallePage({
 type ResumenCardProps = {
   titulo: string;
   valor: string;
-  variante?: "normal" | "positivo" | "pendiente";
+  variante?:
+    | "normal"
+    | "positivo"
+    | "pendiente";
 };
 
 function ResumenCard({
@@ -488,7 +749,9 @@ function ResumenCard({
         {titulo}
       </p>
 
-      <p className={`mt-2 text-2xl font-bold ${color}`}>
+      <p
+        className={`mt-2 text-2xl font-bold ${color}`}
+      >
         {valor}
       </p>
     </div>
@@ -520,7 +783,9 @@ function Seccion({
         )}
       </div>
 
-      <div className="p-5">{children}</div>
+      <div className="p-5">
+        {children}
+      </div>
     </div>
   );
 }
@@ -530,7 +795,10 @@ type DatoProps = {
   valor: string;
 };
 
-function Dato({ etiqueta, valor }: DatoProps) {
+function Dato({
+  etiqueta,
+  valor,
+}: DatoProps) {
   return (
     <div>
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -601,7 +869,11 @@ function Movimiento({
   );
 }
 
-function MensajeVacio({ texto }: { texto: string }) {
+function MensajeVacio({
+  texto,
+}: {
+  texto: string;
+}) {
   return (
     <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
       {texto}
@@ -609,7 +881,11 @@ function MensajeVacio({ texto }: { texto: string }) {
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <th className="whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400 first:pl-0 last:pr-0">
       {children}
@@ -637,15 +913,43 @@ function Td({
   );
 }
 
-function formatearDinero(valor: number) {
-  return new Intl.NumberFormat("es-US", {
-    style: "currency",
-    currency: "ARS",
-    maximumFractionDigits: 0,
-  }).format(valor);
+function formatearDinero(
+  valor: number
+) {
+  const numeroSeguro =
+    Number.isFinite(valor)
+      ? valor
+      : 0;
+
+  return new Intl.NumberFormat(
+    "es-AR",
+    {
+      style: "currency",
+      currency: "ARS",
+      maximumFractionDigits: 0,
+    }
+  ).format(numeroSeguro);
 }
 
-function formatearFecha(fecha: string) {
+function formatearPorcentaje(
+  valor: number
+) {
+  const porcentaje =
+    Number.isFinite(valor)
+      ? valor * 100
+      : 0;
+
+  return `${porcentaje.toLocaleString(
+    "es-AR",
+    {
+      maximumFractionDigits: 2,
+    }
+  )}%`;
+}
+
+function formatearFecha(
+  fecha: string
+) {
   if (!fecha) {
     return "Sin fecha";
   }
@@ -659,39 +963,58 @@ function formatearFecha(fecha: string) {
     partes.length === 3 &&
     partes[0] > 31
   ) {
-    const [anio, mes, dia] = partes;
+    const [anio, mes, dia] =
+      partes;
 
-    return new Intl.DateTimeFormat("es-US").format(
-      new Date(anio, mes - 1, dia)
+    return new Intl.DateTimeFormat(
+      "es-AR"
+    ).format(
+      new Date(
+        anio,
+        mes - 1,
+        dia
+      )
     );
   }
 
-  const fechaConvertida = new Date(fecha);
+  const fechaConvertida =
+    new Date(fecha);
 
-  if (Number.isNaN(fechaConvertida.getTime())) {
+  if (
+    Number.isNaN(
+      fechaConvertida.getTime()
+    )
+  ) {
     return fecha;
   }
 
-  return new Intl.DateTimeFormat("es-US").format(
-    fechaConvertida
-  );
+  return new Intl.DateTimeFormat(
+    "es-AR"
+  ).format(fechaConvertida);
 }
 
-function obtenerColorEstado(estado: string) {
-  const estadoNormalizado = estado
-    .trim()
-    .toLowerCase();
+function obtenerColorEstado(
+  estado: string
+) {
+  const estadoNormalizado =
+    String(estado || "")
+      .trim()
+      .toLowerCase();
 
   if (
-    estadoNormalizado === "finalizada" ||
-    estadoNormalizado === "finalizado"
+    estadoNormalizado ===
+      "finalizada" ||
+    estadoNormalizado ===
+      "finalizado"
   ) {
     return "bg-emerald-100 text-emerald-700";
   }
 
   if (
-    estadoNormalizado === "en ejecución" ||
-    estadoNormalizado === "en ejecucion" ||
+    estadoNormalizado ===
+      "en ejecución" ||
+    estadoNormalizado ===
+      "en ejecucion" ||
     estadoNormalizado === "activa" ||
     estadoNormalizado === "activo"
   ) {
@@ -699,18 +1022,137 @@ function obtenerColorEstado(estado: string) {
   }
 
   if (
-    estadoNormalizado === "pausada" ||
-    estadoNormalizado === "pausado"
+    estadoNormalizado ===
+      "pausada" ||
+    estadoNormalizado ===
+      "pausado"
   ) {
     return "bg-amber-100 text-amber-700";
   }
 
   if (
-    estadoNormalizado === "cancelada" ||
-    estadoNormalizado === "cancelado"
+    estadoNormalizado ===
+      "cancelada" ||
+    estadoNormalizado ===
+      "cancelado"
   ) {
     return "bg-red-100 text-red-700";
   }
 
   return "bg-slate-100 text-slate-700";
+}
+
+function convertirNumero(
+  valor: unknown
+): number {
+  if (typeof valor === "number") {
+    return Number.isFinite(valor)
+      ? valor
+      : 0;
+  }
+
+  if (
+    valor === null ||
+    valor === undefined
+  ) {
+    return 0;
+  }
+
+  const texto = String(valor)
+    .trim()
+    .replace(/\$/g, "")
+    .replace(/\s/g, "");
+
+  if (!texto) {
+    return 0;
+  }
+
+  let textoNormalizado = texto;
+
+  const tieneComa =
+    texto.includes(",");
+
+  const tienePunto =
+    texto.includes(".");
+
+  if (tieneComa && tienePunto) {
+    textoNormalizado = texto
+      .replace(/\./g, "")
+      .replace(",", ".");
+  } else if (tieneComa) {
+    textoNormalizado =
+      texto.replace(",", ".");
+  } else if (tienePunto) {
+    const partes =
+      texto.split(".");
+
+    const pareceSeparadorDeMiles =
+      partes.length > 2 ||
+      (partes.length === 2 &&
+        partes[1].length === 3 &&
+        partes[0] !== "0");
+
+    if (pareceSeparadorDeMiles) {
+      textoNormalizado =
+        texto.replace(/\./g, "");
+    }
+  }
+
+  const numero =
+    Number(textoNormalizado);
+
+  return Number.isNaN(numero)
+    ? 0
+    : numero;
+}
+
+function convertirPorcentaje(
+  valor: unknown
+): number {
+  if (typeof valor === "number") {
+    if (!Number.isFinite(valor)) {
+      return 0;
+    }
+
+    return valor > 1
+      ? valor / 100
+      : valor;
+  }
+
+  if (
+    valor === null ||
+    valor === undefined
+  ) {
+    return 0;
+  }
+
+  const texto =
+    String(valor).trim();
+
+  if (!texto) {
+    return 0;
+  }
+
+  const contieneSimbolo =
+    texto.includes("%");
+
+  const numero = Number(
+    texto
+      .replace("%", "")
+      .replace(",", ".")
+      .trim()
+  );
+
+  if (Number.isNaN(numero)) {
+    return 0;
+  }
+
+  if (
+    contieneSimbolo ||
+    numero > 1
+  ) {
+    return numero / 100;
+  }
+
+  return numero;
 }

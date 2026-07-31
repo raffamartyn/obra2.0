@@ -34,6 +34,9 @@ export interface Contrato {
   MONTO: number;
   FECHA: string;
   DOCUMENTO: string;
+  DESCUENTOS: string;
+  TOTAL: number;
+  COMISION_MONTO: number;
 }
 
 export interface Pago {

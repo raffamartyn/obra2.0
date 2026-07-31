@@ -19,6 +19,11 @@ const enlaces = [
     href: "/movimientos",
     icono: "💰",
   },
+  {
+  nombre: "Cargar datos",
+  href: "/appsheet",
+  icono:  "🏗️",
+}
 ];
 
 export default function Sidebar() {

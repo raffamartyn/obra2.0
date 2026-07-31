@@ -34,6 +34,9 @@ export default async function apicontrato(): Promise<Contrato[]> {
         MONTO: convertirNumero(fila[5] ?? ""),
         FECHA: fila[6] ?? "",
         DOCUMENTO: fila[7] ?? "",
+        DESCUENTOS: fila[8] ?? "",
+        TOTAL: convertirNumero(fila[9] ?? ""),
+        COMISION_MONTO: convertirNumero(fila[10] ?? ""),
       }))
       .filter((contrato) => contrato.ID_CONTRATO !== "");
   } catch (error) {
