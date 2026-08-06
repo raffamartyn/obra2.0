@@ -2,7 +2,7 @@ import apicontratista from "@/app/api/apicontratista";
 import apicontrato from "@/app/api/apicontrato";
 import apipago from "@/app/api/apipago";
 
-import ContratistaCard from "@/app/components/contratistas/ContratistaCard";
+import ListaContratistas from "@/app/components/contratistas/ListaContratistas";
 
 export default async function ContratistasPage() {
   const [contratistas, contratos, pagos] = await Promise.all([
@@ -123,27 +123,9 @@ export default async function ContratistasPage() {
           </p>
         </div>
       ) : (
-        <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-          {contratistasConResumen.map((contratista) => (
-            <ContratistaCard
-              key={contratista.ID_CONTRATISTA}
-              idContratista={
-                contratista.ID_CONTRATISTA
-              }
-              nombre={contratista.NOMBRE}
-              cuil={contratista.CUIL}
-              telefono={contratista.TELEFONO}
-              cantidadContratos={
-                contratista.cantidadContratos
-              }
-              cantidadObras={contratista.cantidadObras}
-              totalContratado={
-                contratista.totalContratado
-              }
-              totalPagado={contratista.totalPagado}
-            />
-          ))}
-        </div>
+       <ListaContratistas
+    contratistas={contratistasConResumen}
+  />
       )}
     </section>
   );

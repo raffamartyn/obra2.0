@@ -22,7 +22,12 @@ const enlaces = [
   {
   nombre: "Cargar datos",
   href: "/appsheet",
-  icono:  "🏗️",
+  icono:  "📝",
+},
+ {
+  nombre: "Presupuestos",
+  href: "/presupuestos",
+  icono:  "📋",
 }
 ];
 

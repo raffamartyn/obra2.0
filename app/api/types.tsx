@@ -55,3 +55,38 @@ export interface Cobro {
   MONTO: number;
   COMPROBANTE: string;
 }
+export interface PresupuestoCliente {
+  ID_PRESUPUESTO: string;
+  FECHA: string;
+  CLIENTE: string;
+  TELEFONO: string;
+  EMAIL: string;
+  DIRECCION_OBRA: string;
+  TIPO_CAMBIO: number;
+  TOTAL_TRABAJOS_USD: number;
+  TOTAL_HONORARIOS_USD: number;
+  TOTAL_USD: number;
+  TOTAL_ARS: number;
+  ESTADO: string;
+  OBSERVACIONES: string;
+}
+
+export interface TrabajoPresupuesto {
+  ID_TRABAJO: string;
+  ID_PRESUPUESTO: string;
+  ID_TIPO_TRABAJO: string;
+  SUPERFICIE_M2: number;
+  PRECIO_M2_USD: number;
+  SUBTOTAL_USD: number;
+  NOMBRE_TRABAJO: string;
+}
+
+export interface HonorarioPresupuesto {
+  ID_HONORARIO_PRESUPUESTO: string;
+  ID_PRESUPUESTO: string;
+  ID_HONORARIO_CONFIG: string;
+  PORCENTAJE: string | number;
+  BASE_CALCULO_USD: number;
+  MONTO_USD: number;
+  NOMBRE_HONORARIO: string;
+}
